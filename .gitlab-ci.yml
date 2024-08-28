@@ -1,0 +1,90 @@
+## Pour Fortify
+
+# variables:
+#   # ----- GENERAL VARIABLES -----
+#   DEBUG: "true"
+#   PROJECT_NAME: "Benchmark/WebGoat"
+#   PROJECT_VERSION: "1.0" 
+#   PROJECT_IMAGE_NAME: ""
+#   PROJECT_LANGUAGES: "java;js"
+#   PROJECT_BUILD_IMAGE: ""
+#   PROJECT_BUILD_SCRIPT: ""
+#   PROJECT_BUILD_LIBS: "" 
+#   PROJECT_BUILD_DIR: ""
+#   PROJECT_ENABLE_PASS_FAIL_POLICIES: "false"
+#   FORTIFY_SSC_URL: ${SSC_URL}
+#   FORTIFY_COPY_EXISTING: "false"
+#   PROJECT_OLD_VERSION: ""
+#   FORTIFY_ISSUE_TEMPLATE: ""
+#   FORTIFY_ATTRIBUTES: ""
+#   CLOC_ENABLE: "false"
+#   # ----- SCANCENTRAL SAST -----
+#   SAST_FORTIFY_ENABLE: "true"
+#   SAST_FORTIFY_EXCLUDES: ""
+#   SAST_FORTIFY_SCANCENTRAL_ENABLE: "full"
+#   SAST_FORTIFY_SCANCENTRAL_CONTROLLER_URL: ${SAST_URL}
+#   SAST_FORTIFY_SCANCENTRAL_BUILD_TOOL: ""
+#   SAST_FORTIFY_SCANCENTRAL_BUILD_FILE: ""
+#   SAST_FORTIFY_SCANCENTRAL_BUILD_ARGS: ""
+#   SAST_FORTIFY_SCANCENTRAL_WAIT_FOR_SCAN_COMPLETE: "true"
+#   SAST_FORTIFY_SCANCENTRAL_POOL: ""
+
+
+# .general-tags:
+#   tags:
+#     - linux
+
+# include:
+#   - project: "secdojo/secgates-gitlab-ci-scripts"
+#     ref: master
+#     file: ".gitlab-ci-base.yml"
+
+# Pour SonarQube
+
+stages:
+    - sonarqube-check
+    - sonarqube-vulnerability-report
+
+sonarqube-check:
+  stage: sonarqube-check
+  image: maven:3-eclipse-temurin-21
+  tags:
+    - linux
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  before_script:
+    - chmod +x ./mvnw
+    - export MAVEN_CONFIG=""
+    - mvn spotless:apply
+  script: 
+    - ./mvnw clean install verify sonar:sonar -e
+  allow_failure: true
+  only:
+    - merge_requests
+    - master
+    - main
+    - develop
+
+sonarqube-vulnerability-report:
+  stage: sonarqube-vulnerability-report
+  tags:
+    - linux
+  script:
+    - 'curl -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/issues/gitlab_sast_export?projectKey=secdojo_benchmark_webgoat_b8a807d7-d6da-488f-8490-428d19d18afe&branch=${CI_COMMIT_BRANCH}&pullRequest=${CI_MERGE_REQUEST_IID}" -o gl-sast-sonar-report.json'
+  allow_failure: true
+  only:
+    - merge_requests
+    - master
+    - main
+    - develop
+  artifacts:
+    expire_in: 1 day
+    reports:
+      sast: gl-sast-sonar-report.json
+  dependencies:
+    - sonarqube-check
